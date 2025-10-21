@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Driver - Bus Tracking</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-database.js"></script>
+</head>
+<body>
+  <h1>🚌 Driver Bus Tracking</h1>
+  <input type="text" id="busNumber" placeholder="Enter Bus Number">
+  <button id="start">Start Sharing Location</button>
+  <button id="stop">Stop Sharing</button>
+
+  <ul id="busList"></ul>
+
+  <div id="map" style="height:400px;"></div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.11/firebase-app.js";
+    import { getDatabase, ref, set, remove, onValue } from "https://www.gstatic.com/firebasejs/9.6.11/firebase-database.js";
+
+    const firebaseConfig = {
+  	apiKey: "AIzaSyAhQ6sxvc48PtU282_8AChtUqScCneCDbc",
+  	authDomain: "my-bus-tracker-28f1d.firebaseapp.com",
+  	databaseURL: "https://my-bus-tracker-28f1d-default-rtdb.firebaseio.com",
+  	projectId: "my-bus-tracker-28f1d",
+  	storageBucket: "my-bus-tracker-28f1d.firebasestorage.app",
+  	messagingSenderId: "250295562927",
+  	appId: "1:250295562927:web:b1e9797a012c417819da5a"
+   };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    let watchId = null;
+    let map = L.map('map').setView([20.59, 78.96], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    let busMarker;
+
+    document.getElementById("start").addEventListener("click", () => {
+      const busNumber = document.getElementById("busNumber").value.trim();
+      if (!busNumber) return alert("Enter bus number first");
+
+      if (navigator.geolocation) {
+        watchId = navigator.geolocation.watchPosition(pos => {
+          const { latitude, longitude } = pos.coords;
+
+          // Send data to Firebase
+          set(ref(db, "buses/" + busNumber), {
+            latitude,
+            longitude,
+            timestamp: Date.now()
+          });
+
+          // Update marker
+          if (!busMarker) {
+            busMarker = L.marker([latitude, longitude]).addTo(map)
+              .bindPopup("Bus " + busNumber).openPopup();
+          } else {
+            busMarker.setLatLng([latitude, longitude]);
+          }
+        });
+      } else {
+        alert("Geolocation not supported");
+      }
+    });
+
+    document.getElementById("stop").addEventListener("click", () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+      const busNumber = document.getElementById("busNumber").value.trim();
+      if (busNumber) remove(ref(db, "buses/" + busNumber));
+      alert("Stopped sharing");
+    });
+  </script>
+</body>
+</html>

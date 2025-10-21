@@ -1,10 +1,85 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Bus Tracker</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User - Bus Tracking</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-database.js"></script>
+  <style>
+    body { font-family: Arial; margin:0; background:#eef2f3; }
+    #map { height:500px; width:100%; }
+    #busList { padding:10px; background:#fff; }
+    button { background:#007bff; color:#fff; border:none; padding:5px 10px; border-radius:5px; cursor:pointer; }
+    button:hover { background:#0056b3; }
+  </style>
 </head>
 <body>
-    <h1>Welcome to Bus Tracker</h1>
-    <p>Your live bus tracking site will appear here soon.</p>
+  <h1 style="text-align:center;">🚍 Live Bus Tracker</h1>
+  <ul id="busList"></ul>
+  <div id="map"></div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.11/firebase-app.js";
+    import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.6.11/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyAhQ6sxvc48PtU282_8AChtUqScCneCDbc",
+  	authDomain: "my-bus-tracker-28f1d.firebaseapp.com",
+  	databaseURL: "https://my-bus-tracker-28f1d-default-rtdb.firebaseio.com",
+  	projectId: "my-bus-tracker-28f1d",
+  	storageBucket: "my-bus-tracker-28f1d.firebasestorage.app",
+  	messagingSenderId: "250295562927",
+  	appId: "1:250295562927:web:b1e9797a012c417819da5a"
+      };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    let map = L.map('map').setView([20.59, 78.96], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    let busMarkers = {};
+
+    // Watch all buses
+    const busesRef = ref(db, "buses/");
+    onValue(busesRef, snapshot => {
+      const data = snapshot.val();
+      const busList = document.getElementById("busList");
+      busList.innerHTML = "";
+
+      if (!data) {
+        busList.innerHTML = "<li>No buses active right now.</li>";
+        return;
+      }
+
+      Object.keys(data).forEach(busNumber => {
+        const { latitude, longitude } = data[busNumber];
+        if (!busMarkers[busNumber]) {
+          busMarkers[busNumber] = L.marker([latitude, longitude]).addTo(map)
+            .bindPopup("Bus " + busNumber);
+        } else {
+          busMarkers[busNumber].setLatLng([latitude, longitude]);
+        }
+
+        const li = document.createElement("li");
+        li.innerHTML = `
+          <strong>${busNumber}</strong>
+          <button onclick="focusBus('${busNumber}')">Track Bus</button>
+        `;
+        busList.appendChild(li);
+      });
+    });
+
+    // Focus on a specific bus
+    window.focusBus = (busNumber) => {
+      const marker = busMarkers[busNumber];
+      if (marker) {
+        map.setView(marker.getLatLng(), 15);
+        marker.openPopup();
+      }
+    };
+  </script>
 </body>
 </html>
