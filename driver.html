@@ -4,59 +4,150 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Driver - Bus Tracking</title>
+
+  <!-- Leaflet Map -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-database.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #eef2f3;
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      background: white;
+      padding: 20px;
+      margin: 20px auto;
+      width: 400px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+    }
+
+    input {
+      width: calc(100% - 10px);
+      padding: 8px;
+      margin-bottom: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    button:hover { background: #0056b3; }
+
+    #map {
+      height: 400px;
+      width: 90%;
+      margin: 20px auto;
+      border-radius: 10px;
+    }
+
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    li {
+      background: #f5f5f5;
+      padding: 8px;
+      margin-bottom: 5px;
+      border-radius: 5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+  </style>
 </head>
 <body>
-  <h1>🚌 Driver Bus Tracking</h1>
-  <input type="text" id="busNumber" placeholder="Enter Bus Number">
-  <button id="start">Start Sharing Location</button>
-  <button id="stop">Stop Sharing</button>
 
-  <ul id="busList"></ul>
+  <div class="container">
+    <h2>🚌 Driver Bus Control Panel</h2>
+    <input type="text" id="busNumber" placeholder="Enter Bus Number">
+    <button id="start">Start Sharing</button>
+    <button id="stop" style="background:red;">Stop Sharing</button>
 
-  <div id="map" style="height:400px;"></div>
+    <h3>Your Active Buses</h3>
+    <ul id="busList"></ul>
+  </div>
+
+  <div id="map"></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.11/firebase-app.js";
     import { getDatabase, ref, set, remove, onValue } from "https://www.gstatic.com/firebasejs/9.6.11/firebase-database.js";
 
+    // 🔥 Your Firebase Config (replace this with your own)
     const firebaseConfig = {
-  	apiKey: "AIzaSyAhQ6sxvc48PtU282_8AChtUqScCneCDbc",
+        apiKey: "AIzaSyAhQ6sxvc48PtU282_8AChtUqScCneCDbc",
   	authDomain: "my-bus-tracker-28f1d.firebaseapp.com",
   	databaseURL: "https://my-bus-tracker-28f1d-default-rtdb.firebaseio.com",
   	projectId: "my-bus-tracker-28f1d",
   	storageBucket: "my-bus-tracker-28f1d.firebasestorage.app",
   	messagingSenderId: "250295562927",
   	appId: "1:250295562927:web:b1e9797a012c417819da5a"
-   };
+      };
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    let watchId = null;
     let map = L.map('map').setView([20.59, 78.96], 5);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    let busMarker;
 
+    let watchId = null;
+    let currentBus = null;
+    let busMarker = null;
+
+    // Add bus to list
+    function addBusToList(busNumber) {
+      const li = document.createElement("li");
+      li.innerHTML = `
+        ${busNumber}
+        <button onclick="deleteBus('${busNumber}')">Delete</button>
+      `;
+      document.getElementById("busList").appendChild(li);
+    }
+
+    // Delete bus function
+    window.deleteBus = (busNumber) => {
+      remove(ref(db, "buses/" + busNumber));
+      const items = document.querySelectorAll("#busList li");
+      items.forEach(li => {
+        if (li.textContent.includes(busNumber)) li.remove();
+      });
+      alert("Deleted bus: " + busNumber);
+    };
+
+    // Start sharing location
     document.getElementById("start").addEventListener("click", () => {
       const busNumber = document.getElementById("busNumber").value.trim();
       if (!busNumber) return alert("Enter bus number first");
 
+      currentBus = busNumber;
+      addBusToList(busNumber);
+
       if (navigator.geolocation) {
         watchId = navigator.geolocation.watchPosition(pos => {
           const { latitude, longitude } = pos.coords;
-
-          // Send data to Firebase
           set(ref(db, "buses/" + busNumber), {
             latitude,
             longitude,
             timestamp: Date.now()
           });
 
-          // Update marker
           if (!busMarker) {
             busMarker = L.marker([latitude, longitude]).addTo(map)
               .bindPopup("Bus " + busNumber).openPopup();
@@ -65,15 +156,31 @@
           }
         });
       } else {
-        alert("Geolocation not supported");
+        alert("Geolocation not supported in this browser.");
       }
     });
 
+    // Stop sharing location
     document.getElementById("stop").addEventListener("click", () => {
       if (watchId) navigator.geolocation.clearWatch(watchId);
-      const busNumber = document.getElementById("busNumber").value.trim();
-      if (busNumber) remove(ref(db, "buses/" + busNumber));
-      alert("Stopped sharing");
+      if (currentBus) {
+        remove(ref(db, "buses/" + currentBus));
+        alert("Stopped sharing bus: " + currentBus);
+      }
+      currentBus = null;
+    });
+
+    // Auto-load active buses (in case multiple drivers use same database)
+    const busesRef = ref(db, "buses/");
+    onValue(busesRef, snapshot => {
+      const data = snapshot.val();
+      const list = document.getElementById("busList");
+      list.innerHTML = "";
+      if (data) {
+        Object.keys(data).forEach(bus => addBusToList(bus));
+      } else {
+        list.innerHTML = "<li>No active buses</li>";
+      }
     });
   </script>
 </body>

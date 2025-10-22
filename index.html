@@ -1,31 +1,94 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>User - Bus Tracking</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>User - Bus Tracker</title>
+
+  <!-- Leaflet Map -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.11/firebase-database.js"></script>
+
   <style>
-    body { font-family: Arial; margin:0; background:#eef2f3; }
-    #map { height:500px; width:100%; }
-    #busList { padding:10px; background:#fff; }
-    button { background:#007bff; color:#fff; border:none; padding:5px 10px; border-radius:5px; cursor:pointer; }
-    button:hover { background:#0056b3; }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background: #f1f5f9;
+      color: #333;
+    }
+
+    h2 {
+      text-align: center;
+      background: #007bff;
+      color: white;
+      padding: 10px;
+      margin: 0;
+    }
+
+    #busList {
+      max-width: 600px;
+      margin: 20px auto;
+      background: white;
+      padding: 15px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    #busList button {
+      background: #007bff;
+      border: none;
+      color: white;
+      padding: 6px 10px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    #busList button:hover {
+      background: #0056b3;
+    }
+
+    #map {
+      height: 500px;
+      width: 90%;
+      margin: 20px auto;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+    }
+
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    li {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px;
+      border-bottom: 1px solid #ddd;
+    }
   </style>
 </head>
 <body>
-  <h1 style="text-align:center;">🚍 Live Bus Tracker</h1>
-  <ul id="busList"></ul>
+
+  <h2>🚌 Live Bus Tracker</h2>
+
+  <div id="busList">
+    <h3>Available Buses</h3>
+    <ul id="busUl"></ul>
+  </div>
+
   <div id="map"></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.11/firebase-app.js";
     import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.6.11/firebase-database.js";
 
-    const firebaseConfig = {
+    // 🔥 Your Firebase Config
+   const firebaseConfig = {
         apiKey: "AIzaSyAhQ6sxvc48PtU282_8AChtUqScCneCDbc",
   	authDomain: "my-bus-tracker-28f1d.firebaseapp.com",
   	databaseURL: "https://my-bus-tracker-28f1d-default-rtdb.firebaseio.com",
@@ -38,48 +101,109 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    let map = L.map('map').setView([20.59, 78.96], 5);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    let busMarkers = {};
+    // Initialize map
+    const map = L.map("map").setView([20.59, 78.96], 5);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
 
-    // Watch all buses
-    const busesRef = ref(db, "buses/");
-    onValue(busesRef, snapshot => {
-      const data = snapshot.val();
-      const busList = document.getElementById("busList");
-      busList.innerHTML = "";
+    const busUl = document.getElementById("busUl");
+    let activeBusMarker = null;
+    let userMarker = null;
+    let activeBusRef = null;
+    let animationFrame = null;
 
-      if (!data) {
-        busList.innerHTML = "<li>No buses active right now.</li>";
-        return;
+    // --- Smooth marker move function ---
+    function animateMarker(marker, newLatLng, duration = 1000) {
+      if (!marker) return;
+      const startLatLng = marker.getLatLng();
+      const startTime = performance.now();
+
+      function step(now) {
+        const t = Math.min(1, (now - startTime) / duration);
+        const lat = startLatLng.lat + (newLatLng.lat - startLatLng.lat) * t;
+        const lng = startLatLng.lng + (newLatLng.lng - startLatLng.lng) * t;
+        marker.setLatLng([lat, lng]);
+        if (t < 1) animationFrame = requestAnimationFrame(step);
       }
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      animationFrame = requestAnimationFrame(step);
+    }
 
-      Object.keys(data).forEach(busNumber => {
-        const { latitude, longitude } = data[busNumber];
-        if (!busMarkers[busNumber]) {
-          busMarkers[busNumber] = L.marker([latitude, longitude]).addTo(map)
-            .bindPopup("Bus " + busNumber);
-        } else {
-          busMarkers[busNumber].setLatLng([latitude, longitude]);
-        }
-
-        const li = document.createElement("li");
-        li.innerHTML = `
-          <strong>${busNumber}</strong>
-          <button onclick="focusBus('${busNumber}')">Track Bus</button>
-        `;
-        busList.appendChild(li);
-      });
+    // Load bus list
+    const busesRef = ref(db, "buses/");
+    onValue(busesRef, (snapshot) => {
+      const data = snapshot.val();
+      busUl.innerHTML = "";
+      if (data) {
+        Object.keys(data).forEach((busNumber) => {
+          const li = document.createElement("li");
+          li.innerHTML = `
+            <span>${busNumber}</span>
+            <button onclick="trackBus('${busNumber}')">Track Bus</button>
+          `;
+          busUl.appendChild(li);
+        });
+      } else {
+        busUl.innerHTML = "<li>No active buses</li>";
+      }
     });
 
-    // Focus on a specific bus
-    window.focusBus = (busNumber) => {
-      const marker = busMarkers[busNumber];
-      if (marker) {
-        map.setView(marker.getLatLng(), 15);
-        marker.openPopup();
-      }
+    // --- Track only selected bus ---
+    window.trackBus = (busNumber) => {
+      // Remove old marker or listener
+      if (activeBusRef && activeBusRef.off) activeBusRef.off();
+      if (activeBusMarker) map.removeLayer(activeBusMarker);
+
+      alert(`Tracking Bus: ${busNumber}`);
+      activeBusRef = ref(db, "buses/" + busNumber);
+
+      onValue(activeBusRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const { latitude, longitude } = data;
+          const newPos = L.latLng(latitude, longitude);
+          if (!activeBusMarker) {
+            activeBusMarker = L.marker(newPos, {
+              icon: L.icon({
+                iconUrl: "https://cdn-icons-png.flaticon.com/512/61/61168.png",
+                iconSize: [38, 38],
+                iconAnchor: [19, 38]
+              })
+            })
+              .addTo(map)
+              .bindPopup(`Bus ${busNumber}`)
+              .openPopup();
+            map.setView(newPos, 15);
+          } else {
+            animateMarker(activeBusMarker, newPos);
+          }
+        }
+      });
     };
+
+    // --- User location marker ---
+    if (navigator.geolocation) {
+      navigator.geolocation.watchPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
+          if (!userMarker) {
+            userMarker = L.marker([latitude, longitude], {
+              icon: L.icon({
+                iconUrl: "https://cdn-icons-png.flaticon.com/512/64/64113.png",
+                iconSize: [32, 32],
+                iconAnchor: [16, 32],
+              }),
+            })
+              .addTo(map)
+              .bindPopup("You are here");
+          } else {
+            userMarker.setLatLng([latitude, longitude]);
+          }
+        },
+        (err) => console.error("Location error:", err)
+      );
+    } else {
+      alert("Geolocation not supported by your browser.");
+    }
   </script>
 </body>
 </html>
