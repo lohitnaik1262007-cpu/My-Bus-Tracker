@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>User - Bus Tracker</title>
 
-  <!-- Leaflet Map -->
+  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
@@ -20,7 +20,6 @@
       background: #f1f5f9;
       color: #333;
     }
-
     h2 {
       text-align: center;
       background: #007bff;
@@ -28,7 +27,6 @@
       padding: 10px;
       margin: 0;
     }
-
     #busList {
       max-width: 600px;
       margin: 20px auto;
@@ -37,7 +35,6 @@
       border-radius: 10px;
       box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
     }
-
     #busList button {
       background: #007bff;
       border: none;
@@ -46,11 +43,9 @@
       border-radius: 5px;
       cursor: pointer;
     }
-
     #busList button:hover {
       background: #0056b3;
     }
-
     #map {
       height: 500px;
       width: 90%;
@@ -58,12 +53,10 @@
       border-radius: 10px;
       box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
     }
-
     ul {
       list-style: none;
       padding: 0;
     }
-
     li {
       display: flex;
       justify-content: space-between;
@@ -73,7 +66,6 @@
   </style>
 </head>
 <body>
-
   <h2>🚌 Live Bus Tracker</h2>
 
   <div id="busList">
@@ -88,7 +80,7 @@
     import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.6.11/firebase-database.js";
 
     // 🔥 Your Firebase Config
-   const firebaseConfig = {
+    const firebaseConfig = {
         apiKey: "AIzaSyAhQ6sxvc48PtU282_8AChtUqScCneCDbc",
   	authDomain: "my-bus-tracker-28f1d.firebaseapp.com",
   	databaseURL: "https://my-bus-tracker-28f1d-default-rtdb.firebaseio.com",
@@ -101,19 +93,19 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    // Initialize map
+    // 🌍 Map setup
     const map = L.map("map").setView([20.59, 78.96], 5);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+    }).addTo(map);
 
     const busUl = document.getElementById("busUl");
     let activeBusMarker = null;
     let userMarker = null;
-    let activeBusRef = null;
-    let animationFrame = null;
+    let userCentered = false; // so we only center once
 
-    // --- Smooth marker move function ---
+    // --- Smooth movement ---
     function animateMarker(marker, newLatLng, duration = 1000) {
-      if (!marker) return;
       const startLatLng = marker.getLatLng();
       const startTime = performance.now();
 
@@ -122,13 +114,12 @@
         const lat = startLatLng.lat + (newLatLng.lat - startLatLng.lat) * t;
         const lng = startLatLng.lng + (newLatLng.lng - startLatLng.lng) * t;
         marker.setLatLng([lat, lng]);
-        if (t < 1) animationFrame = requestAnimationFrame(step);
+        if (t < 1) requestAnimationFrame(step);
       }
-      if (animationFrame) cancelAnimationFrame(animationFrame);
-      animationFrame = requestAnimationFrame(step);
+      requestAnimationFrame(step);
     }
 
-    // Load bus list
+    // 🚍 Load bus list
     const busesRef = ref(db, "buses/");
     onValue(busesRef, (snapshot) => {
       const data = snapshot.val();
@@ -147,27 +138,23 @@
       }
     });
 
-    // --- Track only selected bus ---
+    // 🚍 Track selected bus
     window.trackBus = (busNumber) => {
-      // Remove old marker or listener
-      if (activeBusRef && activeBusRef.off) activeBusRef.off();
       if (activeBusMarker) map.removeLayer(activeBusMarker);
-
       alert(`Tracking Bus: ${busNumber}`);
-      activeBusRef = ref(db, "buses/" + busNumber);
+      const busRef = ref(db, "buses/" + busNumber);
 
-      onValue(activeBusRef, (snapshot) => {
+      onValue(busRef, (snapshot) => {
         const data = snapshot.val();
         if (data) {
-          const { latitude, longitude } = data;
-          const newPos = L.latLng(latitude, longitude);
+          const newPos = L.latLng(data.latitude, data.longitude);
           if (!activeBusMarker) {
             activeBusMarker = L.marker(newPos, {
               icon: L.icon({
                 iconUrl: "https://cdn-icons-png.flaticon.com/512/61/61168.png",
                 iconSize: [38, 38],
-                iconAnchor: [19, 38]
-              })
+                iconAnchor: [19, 38],
+              }),
             })
               .addTo(map)
               .bindPopup(`Bus ${busNumber}`)
@@ -180,26 +167,38 @@
       });
     };
 
-    // --- User location marker ---
+    // 📍 User location
     if (navigator.geolocation) {
       navigator.geolocation.watchPosition(
         (pos) => {
           const { latitude, longitude } = pos.coords;
+          console.log("User location:", latitude, longitude);
+
+          const userIcon = L.icon({
+            iconUrl: "https://cdn-icons-png.flaticon.com/512/64/64113.png",
+            iconSize: [32, 32],
+            iconAnchor: [16, 32],
+          });
+
           if (!userMarker) {
-            userMarker = L.marker([latitude, longitude], {
-              icon: L.icon({
-                iconUrl: "https://cdn-icons-png.flaticon.com/512/64/64113.png",
-                iconSize: [32, 32],
-                iconAnchor: [16, 32],
-              }),
-            })
+            userMarker = L.marker([latitude, longitude], { icon: userIcon })
               .addTo(map)
               .bindPopup("You are here");
           } else {
             userMarker.setLatLng([latitude, longitude]);
           }
+
+          // Center map only once
+          if (!userCentered) {
+            map.setView([latitude, longitude], 14);
+            userCentered = true;
+          }
         },
-        (err) => console.error("Location error:", err)
+        (err) => {
+          console.error("Geolocation error:", err);
+          alert("⚠️ Location access denied. Please enable GPS or HTTPS.");
+        },
+        { enableHighAccuracy: true }
       );
     } else {
       alert("Geolocation not supported by your browser.");
