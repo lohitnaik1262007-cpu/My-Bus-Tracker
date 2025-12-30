@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>User – Bus Tracker</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+
+<style>
+  body {
+    margin:0;
+    font-family: Arial, sans-serif;
+    background:#000;
+    color:#fff;
+  }
+  #map {
+    height: 350px;
+  }
+  .bus {
+    background:#111;
+    margin:6px;
+    padding:8px;
+    border-radius:6px;
+  }
+  button {
+    padding:5px 10px;
+    background:#00ffcc;
+    border:none;
+    cursor:pointer;
+  }
+</style>
+</head>
+
+<body>
+
+<h2 style="text-align:center">🧍 User Panel</h2>
+
+<div id="busList"></div>
+<div id="map"></div>
+
+<!-- Leaflet -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<!-- Firebase + App -->
+<script type="module">
+/* ================= FIREBASE CONSOLE ================= */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDeW9xeNEKBnXzHNoaAdkLuxaXYocSEq18",
+  authDomain: "my-bus-tracker-c734b.firebaseapp.com",
+  databaseURL: "https://my-bus-tracker-c734b-default-rtdb.firebaseio.com",
+  projectId: "my-bus-tracker-c734b",
+  storageBucket: "my-bus-tracker-c734b.firebasestorage.app",
+  messagingSenderId: "255818671180",
+  appId: "1:255818671180:web:2b8fb2d4a88c5a109dc0e9",
+  measurementId: "G-VPE06MYXSG"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+/* ================= MAP ================= */
+const map = L.map("map").setView([12.9716,77.5946], 13);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+/* ================= ICONS ================= */
+const busIcon = L.divIcon({
+  html: "🚌",
+  iconSize: [200,200],
+  iconAnchor: [100,100],
+  className:""
+});
+
+const userIcon = L.divIcon({
+  html: " 📍 ",
+  iconSize: [200,200],
+  iconAnchor: [100,100],
+  className:""
+});
+
+/* ================= USER LOCATION ================= */
+let userMarker = null;
+
+navigator.geolocation.watchPosition(
+  pos => {
+    const latlng = [pos.coords.latitude, pos.coords.longitude];
+    if(!userMarker){
+      userMarker = L.marker(latlng,{icon:userIcon}).addTo(map)
+        .bindPopup("You are here");
+    } else {
+      userMarker.setLatLng(latlng);
+    }
+  },
+  err => alert("Location permission required"),
+  { enableHighAccuracy:true }
+);
+
+/* ================= BUS LIST ================= */
+const busList = document.getElementById("busList");
+const markers = {};
+
+onValue(ref(db,"buses"), snap => {
+  busList.innerHTML = "";
+  snap.forEach(child => {
+    const b = child.val();
+    if(b.active){
+      busList.innerHTML += `
+        <div class="bus">
+          🚌 <b>${b.id}</b><br>
+          Route: ${b.route}<br>
+          <button onclick="trackBus('${b.id}')">Track</button>
+        </div>`;
+    }
+  });
+});
+
+/* ================= TRACK BUS ================= */
+window.trackBus = (id) => {
+  onValue(ref(db,"buses/"+id), snap => {
+    if(!snap.exists()) return;
+
+    const b = snap.val();
+    const pos = [b.lat, b.lng];
+
+    if(!markers[id]){
+      markers[id] = L.marker(pos,{icon:busIcon}).addTo(map);
+    } else {
+      markers[id].setLatLng(pos);
+    }
+    map.setView(pos,16);
+  });
+};
+</script>
+
+</body>
+</html>
